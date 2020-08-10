@@ -1,0 +1,243 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "VMName": {
+      "type": "string",
+      "minLength": 8
+    },
+    "adminUserName": {
+      "type": "string",
+      "minLength": 5
+    },
+    "adminPassword": {
+      "type": "securestring"
+    },
+    "imageSKU": {
+      "type": "string",
+      "defaultValue": "2019-Datacenter",
+      "allowedValues": [
+        "2019-Datacenter",
+        "2019-Datacenter-Core",
+        "2016-Datacenter",
+        "2016-Datacenter-Server-Core"
+      ]
+    },
+    "imageOffer":{
+      "type": "string",
+      "defaultValue": "WindowsServer",
+      "allowedValues": [
+        "WindowsServer"
+      ]
+    },
+    "domainName": {
+      "type": "string",
+      "metadata": {
+        "description": "DNS domain name for existing Active Directory domain"
+      }
+    },
+    "domainAdminUsername": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the domain admin user"
+      }
+    },
+    "domainAdminUserPassword": {
+      "type": "securestring",
+      "minLength": 12,
+      "metadata": {
+        "description": "Password for the domain admin user"
+      }
+    },
+    "existingvirtualNetworkName": {
+      "type": "string",
+      "defaultValue": "20_10_0_0_net"
+    },
+    "existingvirtualNetworkResourceGroup": {
+      "type": "string",
+      "defaultvalue": "core-network-rg"
+    },
+    "existingSubnetName":{
+      "type": "string"
+    },
+    "vmSize": {
+      "type": "string",
+      "metadata": {
+        "description": "Size of the VMs to be created"
+      },
+      "defaultValue": "Standard_D2s_v3"
+    },
+    "datadriveLetter" :{
+      "type": "string",
+      "metadata": {
+        "description": "Drive letter for the Data drive which will be created on Storage Space"
+      },
+      "defaultValue": "F"
+    },
+    "location": {
+      "type": "string"
+    },
+    "oSStorageType":  {
+      "type": "string",
+      "defaultValue": "StandardSSD_LRS"
+    },
+    "dataStorageType":  {
+        "type": "string",
+        "defaultValue": "StandardSSD_LRS"
+    },
+    "dataStorageSize":  {
+      "type": "int",
+      "defaultValue": 1023
+    },
+    "timeZone":{
+      "type": "string",
+      "defaultValue": "Eastern Standard Time"
+    },
+    "_artifactsLocation": {
+      "type": "string",
+      "metadata": {
+        "description": "Auto-generated container in staging storage account to receive post-build staging folder upload"
+      },
+      "defaultValue": "https://<YOUR_STORAGE_ACCOUNT_NAME>.blob.core.windows.net/artifact/" 
+    },
+    "_artifactsLocationSasToken": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Auto-generated token to access _artifactsLocation"
+      },
+      "defaultValue": ""
+    }
+  },
+  "resources": [
+    {
+      "name": "[variables('NicName')]",
+      "type": "Microsoft.Network/networkInterfaces",
+      "location": "[parameters('location')]",
+      "apiVersion": "2018-04-01",
+      "dependsOn": [ ],
+      "tags": {
+        "displayName": "demolab"
+      },
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[variables('SubnetRef')]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "[parameters('VMName')]",
+      "type": "Microsoft.Compute/virtualMachines",
+      "location": "[parameters('location')]",
+      "apiVersion": "2018-06-01",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/networkInterfaces', variables('NicName'))]"
+      ],
+      "tags": {
+        "displayName": "demolab"
+      },
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[parameters('vmsize')]"
+        },
+        "osProfile": {
+          "computerName": "[parameters('VMName')]",
+          "adminUsername": "[parameters('AdminUsername')]",
+          "adminPassword": "[parameters('AdminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "[variables('ImagePublisher')]",
+            "offer": "[parameters('imageOffer')]",
+            "sku": "[parameters('imageSKU')]",
+            "version": "latest"
+          },
+          "osDisk": {
+            "name": "[concat(parameters('vmName'),'-OSDisk')]",
+            "caching": "ReadWrite",
+            "createOption": "FromImage",
+            "managedDisk": {
+                "storageAccountType": "[parameters('oSStorageType')]"
+            }
+          },
+          "dataDisks": [
+            {
+                "createOption": "Empty",
+                "lun": 0,
+                "diskSizeGB": "[parameters('dataStorageSize')]",
+                "caching": "ReadOnly",
+                "managedDisk": {
+                    "storageAccountType": "[parameters('dataStorageType')]"
+                }
+            }
+          ]
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('NicName'))]"
+            }
+          ]
+        }
+      },
+      "resources": [
+        {
+          "name": "Microsoft.Powershell.DSC",
+          "type": "extensions",
+          "location": "[resourceGroup().location]",
+          "apiVersion": "2018-06-01",
+          "dependsOn": [
+            "[resourceId('Microsoft.Compute/virtualMachines', parameters('VMName'))]"
+          ],
+          "tags": {
+            "displayName": "demoLab"
+          },
+          "properties": {
+            "publisher": "Microsoft.Powershell",
+            "type": "DSC",
+            "typeHandlerVersion": "2.73",
+            "autoUpgradeMinorVersion": true,
+            "settings": {
+              "wmfversion" :"latest",
+              "configuration":{
+                "url": "[variables('DSCConfigModulesURL')]",
+                "script": "Domain.ps1",
+                "function": "DomainConfig"
+              },
+              "configurationArguments": {
+                "domainName": "[parameters('domainName')]",
+                "datadriveletter" : "[parameters('datadriveletter')]",
+                "timeZone": "[parameters('timeZone')]"
+                }
+              },
+              "protectedSettings": {
+                "configurationArguments":{
+                  "DomainAdminCreds": {
+                    "userName": "[variables('fulldomainUsername')]",
+                    "password": "[parameters('domainAdminUserPassword')]"
+                    }
+                  } 
+                }
+              }
+            } 
+        ]
+      }
+    ],
+  "outputs": {},
+  "variables": {
+    "ImagePublisher": "MicrosoftWindowsServer",
+    "VnetID": "[resourceId(parameters('existingvirtualNetworkResourceGroup'), 'Microsoft.Network/virtualNetworks', parameters('existingvirtualNetworkName'))]",
+    "SubnetRef": "[concat(variables('VnetID'), '/subnets/', parameters('existingSubnetName'))]",
+    "NicName": "[concat(parameters('VMName'), 'NetworkInterface')]",
+    "domainnameplit": "[split(parameters('domainname'),'.')]",
+    "fulldomainusername": "[concat(variables('domainnameplit')[0],'\\',parameters('domainAdminusername'))]",
+    "DSCConfigModulesURL": "[concat(parameters('_artifactsLocation'), 'Domain.zip', parameters('_artifactsLocationSasToken'))]"
+  }
+}
