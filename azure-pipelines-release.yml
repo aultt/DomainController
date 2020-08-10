@@ -1,0 +1,40 @@
+trigger:
+- none
+
+pool:
+  vmImage: 'vs2017-win2016'
+
+steps:
+- task: DownloadBuildArtifacts@0
+  inputs:
+    buildType: 'specific'
+    project: '<YOUR_PROJECT_ID>'
+    pipeline: '<YOUR_PIPELINE_NO>'
+    buildVersionToDownload: 'latest'
+    downloadType: 'single'
+    artifactName: 'Source'
+    downloadPath: '$(System.ArtifactsDirectory)'
+- task: AzurePowerShell@5
+  displayName: 'Azure PowerShell script: InlineScript'
+  inputs:
+    azureSubscription: '<SUBSCRIPTION_NAME>(<SUBSCRIPTIONID>)'
+    ScriptType: InlineScript
+    Inline: |
+     $context = (Get-AzStorageAccount -ResourceGroupName 'storage-rg' -AccountName '<YOUR_STORAGEACCOUNT_NAME>').context
+     $myToken= New-AzStorageAccountSASToken -Context $context -Service Blob -ResourceType Service,Container,Object -Permission "racwdlup" 
+     
+     Write-Host "##vso[task.setvariable variable=SASToken;]$myToken"
+    azurePowerShellVersion: LatestVersion
+- task: AzureResourceManagerTemplateDeployment@3
+  inputs:
+    deploymentScope: 'Resource Group'
+    azureResourceManagerConnection: 'D<SUBSCRIPTION_NAME>(<SUBSCRIPTIONID>)'
+    subscriptionId: '<SUBSCRIPTIONID>'
+    action: 'Create Or Update Resource Group'
+    resourceGroupName: 'Domain-rg'
+    location: 'East US'
+    templateLocation: 'Linked artifact'
+    csmFile: '$(System.ArtifactsDirectory)/Source/azuredeploy.json'
+    csmParametersFile: '$(System.ArtifactsDirectory)/Source/azuredeploy.parameters.json'
+    overrideParameters: '-VMName "<YOUR_VM_NAME>" -DomainName "<YOURDOMAINNAME.net>" -_artifactsLocationSasToken "$(SASToken)"'
+    deploymentMode: 'Incremental'
