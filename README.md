@@ -8,5 +8,5 @@ ARM Template with DSC configuration to deploy Domain controller.  A Domain contr
 4. Existing Storage Account
 5. Existing Key Vault
 
-## Step by Step Walk through to configure in your environment found at the link provided below.
+## Step by Step Walk through 
 https://troyault.com/azure-devops-for-the-data-engineer-part-1/
